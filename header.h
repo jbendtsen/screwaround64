@@ -36,11 +36,10 @@ typedef unsigned int u32;
 struct line_t {
 	struct line_t *next;
 	struct line_t *prev;
-	int status;
-	int col;
-	int start, end;
-	char *str;
 	struct line_t *equiv;
+	char *str;
+	int start, end;
+	int col;
 };
 
 typedef struct line_t line_t;
@@ -127,7 +126,7 @@ void paste_text(void);
 void set_column(text_t *text, int col);
 void set_row(text_t *text, line_t *row);
 
-void process(void);
+void process_line(void);
 
 /*
 void input_undo(void);
@@ -148,9 +147,6 @@ void resize_display(int asm_x, int asm_w, int bin_x, int bin_w, int y, int h);
 int window_from_coords(int x, int y);
 void set_caret_from_coords(int wnd, int x, int y);
 
-void debug_display(int asm_x, int asm_w, int bin_x, int bin_w, int wnd_y, int wnd_h);
-void debug_winmsg(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-
 // main.c
 
 HWND spawn_window(int ex_style, const char *class, const char *name, int style, int x, int y, int w, int h);
@@ -163,5 +159,7 @@ text_t *text_of(int wnd);
 text_t *opposed_text(text_t *text);
 
 void debug_string(char *str);
+
+void debug_winmsg(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
 #endif

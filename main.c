@@ -29,6 +29,7 @@ void start_editing() {
 }
 void stop_editing() {
 	SetWindowText(main_wnd, "Screwaround64");
+	//process_line();
 	editing = 0;
 }
 
@@ -256,7 +257,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 					text_t *txt = text_of(focus);
 					int above = (key_mod & SHIFT) | (txt->cur->col == 0);
 
-					add_line(txt, txt->cur, above);
+					add_line(txt, NULL, above);
 					set_row(txt, txt->cur->next);
 					break;
 				}
@@ -340,12 +341,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			int x = lParam & 0xffff;
 			int y = lParam >> 16;
 
-			/*
 			if (lb_held && focus) {
 				set_caret_from_coords(focus, x, y);
 				update_selection(text_of(focus));
 			}
-			*/
 
 			refresh();
 			break;

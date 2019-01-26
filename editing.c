@@ -1,10 +1,17 @@
 #include "header.h"
 
-// content.c
+void create_texts(tab_t *tab) {
+	text_t *a = &tab->asm_text;
+	text_t *b = &tab->bin_text;
 
-void create_text(text_t *text) {
-	memset(text, 0, sizeof(text_t));
-	add_line(text, NULL, 0);
+	a->first = calloc(1, sizeof(line_t));
+	b->first = calloc(1, sizeof(line_t));
+
+	a->first->equiv = b->first;
+	b->first->equiv = a->first;
+
+	a->top = a->cur = a->last = a->first;
+	b->top = b->cur = b->last = b->first;
 }
 
 void close_text(text_t *text) {
@@ -19,34 +26,47 @@ void close_text(text_t *text) {
 	memset(text, 0, sizeof(text_t));
 }
 
-void add_line(text_t *text, line_t *current, int above) {
-	if (!current) {
-		if (text->first)
-			return;
-
-		text->first = calloc(1, sizeof(line_t));
-		text->top = text->cur = text->last = text->first;
-		return;
-	}
-
+// Add a new line, where 'equivalent' is the line we just created (starts off as NULL)
+void add_line(text_t *text, line_t *equivalent, int above) {
+	// Create a new line
 	line_t *line = calloc(1, sizeof(line_t));
-	line_t *neighbour = current->next;
+	// Get the line beneath the current line
+	line_t *current = text->cur;
+	line_t *beneath = current->next;
 
-	current->next = line;
-	line->prev = current;
-
-	if (neighbour) {
-		line->next = neighbour;
-		neighbour->prev = line;
+	// If there is a line beneath the current line, set its previous line to be the new line
+	if (beneath) {
+		line->next = beneath;
+		beneath->prev = line;
 	}
 
+	// Set the new line to be the next line to the current line
+	line->prev = current;
+	current->next = line; 
+
+	// If the current line was the last line, ensure the last line points to our new line
 	if (text->last == current)
 		text->last = line;
 
+	// If the new line was meant to be above the current line, swap the properties of the two lines
 	if (above && current->str) {
 		line->str = current->str;
+		line->start = current->start;
+		line->end = current->end;
+		line->col = current->col;
+
 		current->str = NULL;
+		current->start = current->end = current->col = 0;
 	}
+
+	// If the equivalent line has already been created, link that and this new line together
+	if (equivalent) {
+		line->equiv = equivalent;
+		equivalent->equiv = line;
+	}
+	// Otherwise, add a new line using this new line as the equivalent line
+	else
+		add_line(opposed_text(text), line, above);
 }
 
 int line_count(line_t *top, line_t *bottom) {
@@ -116,20 +136,6 @@ line_t *resolve_line(line_t *line, line_t *test) {
 		line = line->prev;
 
 	return line;
-}
-
-void debug_lines(text_t *text, line_t *line) {
-	printf("\t%p - line\n"
-		"\t%p - line->prev\n"
-		"\t%p - line->next\n"
-		"\t%p - text->first\n"
-		"\t%p - text->last\n"
-		"\t%p - text->start\n"
-		"\t%p - text->end\n"
-		"\t%p - text->top\n"
-		"\t%p - text->cur\n",
-		line, line->prev, line->next, text->first, text->last,
-		text->start, text->end, text->top, text->cur);
 }
 
 void clear_line(text_t *text, line_t *line, int completely) {
@@ -269,8 +275,6 @@ void delete_selection(text_t *text) {
 	end_selection(text);
 }
 
-// input.c
-
 #define ARROW_LEFT  0
 #define ARROW_UP    1
 #define ARROW_RIGHT 2
@@ -288,6 +292,8 @@ void move_cursor(int dir, int shift) {
 
 	if (shift && !txt->sel)
 		start_selection(txt);
+	if (!shift && txt->sel)
+		end_selection(txt);
 
 	int len = 0;
 	if (txt->cur->str)
@@ -517,7 +523,7 @@ void paste_text() {
 		while (start < clip_len) {
 			if (txt->cur->str) {
 				// create_new_line()???
-				add_line(txt, txt->cur, 0);
+				add_line(txt, NULL, 0);
 				set_row(txt, txt->cur->next);
 			}
 
@@ -544,8 +550,6 @@ void paste_text() {
 	CloseClipboard();
 }
 
-// edit.c
-
 void set_column(text_t *text, int col) {
 	if (!text || !text->cur)
 		return;
@@ -570,8 +574,7 @@ void set_row(text_t *text, line_t *row) {
 	if (!text || !row)
 		return;
 
-	//if (text->cur != row)
-	process();
+	process_line();
 	text->cur = row;
 
 	text_t *other = opposed_text(text);
@@ -592,32 +595,10 @@ void set_row(text_t *text, line_t *row) {
 	}
 }
 
-// main.c
-
-void process() {
-	stop_editing();
-
+void process_line() {
 	text_t *focus = text_of(get_focus());
 	if (!focus || !focus->cur)
 		return;
-
-	text_t *other = opposed_text(focus);
-
-	if (!focus->cur->equiv) {
-		if (!focus->cur->prev) {
-			add_line(other, other->first, 1);
-			focus->cur->equiv = other->first;
-		}
-		else if (focus->cur->prev->equiv) {
-			add_line(other, focus->cur->prev->equiv, 0);
-			focus->cur->equiv = focus->cur->prev->equiv->next; // this is just ridiculous
-		}
-		else
-			return;
-	}
-
-	// to make sure it goes the other way as well
-	focus->cur->equiv->equiv = focus->cur;
 
 	if (focus->type == ASM_WND)
 		assemble(focus->cur);

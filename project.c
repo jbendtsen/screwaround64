@@ -31,8 +31,7 @@ void add_tab(project_t *proj) {
 	proj->tab = realloc(proj->tab, ++proj->n_tabs * sizeof(tab_t));
 
 	tab_t *tab = &proj->tab[last];
-	create_text(&tab->asm_text);
-	create_text(&tab->bin_text);
+	create_texts(tab);
 
 	tab->asm_text.type = ASM_WND;
 	tab->bin_text.type = BIN_WND;

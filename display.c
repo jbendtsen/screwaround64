@@ -167,7 +167,7 @@ void set_caret_from_coords(int wnd, int x, int y) {
 	int c = 0, top = BORDER;
 
 	while (line && (c * lheight) < wnd_h - (top + lheight + BORDER)) {
-		if (top + (c + 1) * wnd_h > y)
+		if (top + (c + 1) * lheight > y)
 			break;
 
 		c++;
@@ -290,8 +290,6 @@ void draw_display(int wnd, HDC hdc) {
 
 		int top = BORDER + y;
 		int left = BORDER + MARGIN;
-
-		top += 2; // HACK!
 
 		if (line->str) {
 			int len = strlen(line->str);
