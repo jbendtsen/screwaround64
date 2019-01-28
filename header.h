@@ -10,25 +10,34 @@
 #define MAIN_WND 0
 #define ASM_WND  1
 #define BIN_WND  2
+#define ASM_HEAD 3
+#define BIN_HEAD 4
 
-#define WIDTH	640
-#define HEIGHT	480
+#define N_WNDS   5
 
-#define X_OFF	20
-#define Y_OFF	20
-#define MID_GAP	20
-#define BOTTOM	100
+#define DISP_FONT 0
 
-#define MAX_BIN_WIDTH	300
+#define WIDTH  640
+#define HEIGHT 480
 
-#define BORDER	2
-#define MARGIN	3
-#define CARET	2
+#define HEADING_Y 27
 
-#define WHITE		RGB(0xff, 0xff, 0xff)
-#define BACKGROUND	RGB(0xe0, 0xe0, 0xe0)
+#define X_OFF   20
+#define Y_OFF   50
+#define MID_GAP 20
+#define BOTTOM 100
 
-#define LINE_MAX	64
+#define MAX_BIN_WIDTH 300
+
+#define BORDER 2
+#define MARGIN 3
+#define CARET  2
+
+#define BLACK      RGB(0x00, 0x00, 0x00)
+#define WHITE      RGB(0xff, 0xff, 0xff)
+#define BACKGROUND RGB(0xe0, 0xe0, 0xe0)
+
+#define LINE_MAX 64
 
 typedef unsigned char u8;
 typedef unsigned int u32;
@@ -137,11 +146,44 @@ void input_mouseup(int mouse);
 void input_scroll(int vel);
 */
 
-// display.c
+// gui.c
 
 #include <windows.h>
 
-void refresh();
+enum brush_e {
+	blank,
+	border,
+	caret,
+	hl,
+	white,
+	grey,
+	blue,
+	red,
+	n_brushes
+};
+
+void init_brushes(void);
+HBRUSH get_brush(enum brush_e idx);
+void delete_brushes(void);
+
+HFONT get_font(int idx);
+
+HWND get_window(int idx);
+void set_window(int idx, HWND hwnd);
+void refresh_window(int idx);
+void set_title(const char *title);
+
+int get_window_index(HWND hwnd);
+HWND spawn_window(int ex_style, const char *class, const char *name, int style, int x, int y, int w, int h);
+
+void update_display(int width, int height);
+
+HWND init_gui(HINSTANCE hInstance, WNDPROC main_proc);
+
+// display.c
+
+LONG_PTR get_wnd_proc(int wnd);
+
 void resize_display(int asm_x, int asm_w, int bin_x, int bin_w, int y, int h);
 
 int window_from_coords(int x, int y);
@@ -149,7 +191,8 @@ void set_caret_from_coords(int wnd, int x, int y);
 
 // main.c
 
-HWND spawn_window(int ex_style, const char *class, const char *name, int style, int x, int y, int w, int h);
+void start_editing();
+void stop_editing();
 
 int get_focus(void);
 void set_focus(int wnd);
@@ -158,8 +201,12 @@ void set_texts(text_t *asm_txt, text_t *bin_txt);
 text_t *text_of(int wnd);
 text_t *opposed_text(text_t *text);
 
+// debug.c
+
+void init_debug(void);
 void debug_string(char *str);
 
 void debug_winmsg(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+void debug_wndctl(int idx);
 
 #endif

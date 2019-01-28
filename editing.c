@@ -604,4 +604,6 @@ void process_line() {
 		assemble(focus->cur);
 	else if (focus->type == BIN_WND)
 		disassemble(focus->cur);
+
+	stop_editing();
 }

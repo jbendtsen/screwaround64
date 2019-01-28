@@ -3,33 +3,21 @@
 #define CTRL  1
 #define SHIFT 2
 
-#define ID_OFF 32
-
-int n_ids = 0;
-
 project_t ctx;
 
 int focus = 0;
 int hover = 0;
 
-HWND main_wnd = NULL;
-
-HWND spawn_window(int ex_style, const char *class, const char *name, int style, int x, int y, int w, int h) {
-	int id = ID_OFF + n_ids++;
-
-	return CreateWindowEx(ex_style, class, name, style, x, y, w, h,
-	                      main_wnd, (HMENU)id, GetModuleHandle(NULL), NULL);
-}
-
 int editing = 0;
 
 void start_editing() {
-	SetWindowText(main_wnd, "* Screwaround64");
+	set_title("* Screwaround64");
 	editing = 1;
 }
 void stop_editing() {
-	SetWindowText(main_wnd, "Screwaround64");
-	//process_line();
+	set_title("Screwaround64");
+	refresh_window(ASM_WND);
+	refresh_window(BIN_WND);
 	editing = 0;
 }
 
@@ -41,7 +29,9 @@ void set_focus(int wnd) {
 	if (focus != wnd)
 		stop_editing();
 
+	int old_focus = focus;
 	focus = wnd;
+	refresh_window(old_focus);
 }
 
 text_t *asm_text_cur = NULL;
@@ -70,119 +60,22 @@ text_t *opposed_text(text_t *text) {
 	return NULL;
 }
 
-void update_display(int width, int height) {
-	int w = (width - (X_OFF * 2) - MID_GAP) / 2;
-	int h = height - Y_OFF - BOTTOM;
-
-	if (w < 0) w = 0;
-	if (h < 0) h = 0;
-
-	int w_bin = w < MAX_BIN_WIDTH ? w : MAX_BIN_WIDTH;
-	int w_asm = w + (w - w_bin);
-	int x_bin = X_OFF + w_asm + MID_GAP;
-
-	resize_display(X_OFF, w_asm, x_bin, w_bin, Y_OFF, h);
-}
-
-// #define DEBUG
-#ifdef DEBUG
-
-void send_debug_msg(UINT uMsg, WPARAM wParam, LPARAM lParam) {
-	HWND client = FindWindow("Client", NULL);
-	SendMessage(client, uMsg, wParam, lParam);
-}
-
-void debug_string(char *str) {
-	if (str && strlen(str))
-		send_debug_msg(0x4001, (WPARAM)str, strlen(str));
-}
-
-struct var {
-	char *label;
-	int type;
-	void *value;
-};
-
-struct dbg {
-	char *name;
-	int count;
-	struct var *var;
-	int n_vars;
-};
-
-#define BUF_SIZE 400
-char buf[BUF_SIZE];
-int dbg_ok = 0;
-
-void debug_out(struct dbg *dbg) {
-	if (!dbg)
-		return;
-
-	/*
-	if (uMsg != WM_PAINT) {
-		memset(buf, 0, BUF_SIZE);
-		sprintf(buf, "%s %d - uMsg: %#x, wParam: %#x, lParam: %#x", dbg->name, dbg->count, uMsg, wParam, lParam);
-		send_debug_msg(0x4001, (WPARAM)&buf[0], strlen(buf));
-	}
-	*/
-
-	memset(buf, 0, BUF_SIZE);
-	int n = snprintf(buf, BUF_SIZE, "%s %d - ", dbg->name, dbg->count);
-	int pr = BUF_SIZE - n;
-
-	const char *dec_str = "%s%s: %d";
-	const char *hex_str = "%s%s: %#x";
-
-	int i;
-	for (i = 0; i < dbg->n_vars; i++) {
-		const char *msg = dbg->var[i].type ? hex_str : dec_str;
-		n = snprintf(buf + strlen(buf), pr, msg, i == 0 ? "" : ", ", dbg->var[i].label, dbg->var[i].value);
-		pr -= n;
-	}
-
-	send_debug_msg(0x4001, (WPARAM)&buf[0], strlen(buf));
-	dbg->count++;
-}
-
-struct var msg_vars[] = {
-	{"hwnd", 1, NULL},
-	{"uMsg", 1, NULL},
-	{"wParam", 1, NULL},
-	{"lParam", 1, NULL}
-};
-
-struct dbg msg_dbg = {
-	"mousewheel", 0, &msg_vars[0], 4
-};
-
-void debug_winmsg(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-	msg_vars[0].value = (void*)hwnd;
-	msg_vars[1].value = (void*)uMsg;
-	msg_vars[2].value = (void*)wParam;
-	msg_vars[3].value = (void*)lParam;
-	debug_out(&msg_dbg);
-}
-
-#endif
-
 int key_mod = 0;
 int lb_held = 0;
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-	main_wnd = hwnd;
+	set_window(MAIN_WND, hwnd);
 
 	switch(uMsg) {
 		case WM_CREATE:
 		{
-		#ifdef DEBUG
-			send_debug_msg(0x4000, 0, GetCurrentProcessId());
-			dbg_ok = 1;
-		#endif
+			init_debug();
 
 			new_project(&ctx);
 
-			focus = ASM_WND;
 			update_display(WIDTH, HEIGHT);
+
+			focus = ASM_WND;
 			break;
 		}
 		case WM_SIZE:
@@ -195,6 +88,15 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 
 			update_display(width, height);
 			break;
+		}
+		case WM_CTLCOLORSTATIC:
+		{
+			int wnd = get_window_index((HWND)lParam);
+			if (wnd != ASM_HEAD && wnd != BIN_HEAD)
+				break;
+
+			SetBkMode((HDC)wParam, TRANSPARENT);
+			return (INT_PTR)get_brush(blank);
 		}
 		case WM_KEYDOWN:
 		{
@@ -293,7 +195,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				}
 			}
 
-			refresh();
+			refresh_window(focus);
 			break;
 		}
 		case WM_KEYUP:
@@ -307,7 +209,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 					break;
 			}
 
-			refresh();
+			refresh_window(focus);
 			break;
 		}
 		case WM_CHAR:
@@ -317,7 +219,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 
 			start_editing();
 			insert_char(wParam);
-			refresh();
+			refresh_window(focus);
 			break;
 		}
 		case WM_LBUTTONDOWN:
@@ -333,7 +235,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				start_selection(text_of(focus));
 			}
 
-			refresh();
+			refresh_window(focus);
 			break;
 		}
 		case WM_MOUSEMOVE:
@@ -346,7 +248,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				update_selection(text_of(focus));
 			}
 
-			refresh();
+			refresh_window(focus);
 			break;
 		}
 		case WM_LBUTTONUP:
@@ -358,7 +260,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 					end_selection(txt);
 
 			lb_held = 0;
-			refresh();
+			refresh_window(focus);
 			break;
 		}
 		case WM_MOUSEWHEEL:
@@ -380,10 +282,11 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			else if (delta < 0 && txt->cur->next)
 				set_row(txt, txt->cur->next);
 
-			refresh();
+			refresh_window(focus);
 			break;
 		}
 		case WM_CLOSE:
+			delete_brushes();
 			DestroyWindow(hwnd);
 			break;
 		case WM_DESTROY:
@@ -397,50 +300,16 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	return 0;
 }
 
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
-	LPSTR lpCmdLine, int nCmdShow)
-{
-	WNDCLASSEX wc;
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+	HWND hwnd = init_gui(hInstance, WndProc);
+	if (!hwnd)
+		return 0;
+
+	ShowWindow(hwnd, nCmdShow);
+	UpdateWindow(hwnd);
+
 	MSG Msg;
-	char *g_szClassName = "SC64";
-
-	wc.cbSize		 = sizeof(WNDCLASSEX);
-	wc.style		 = CS_GLOBALCLASS | CS_HREDRAW | CS_VREDRAW;
-	wc.lpfnWndProc	 = WndProc;
-	wc.cbClsExtra	 = 0;
-	wc.cbWndExtra	 = 0;
-	wc.hInstance	 = hInstance;
-	wc.hIcon		 = LoadIcon(NULL, IDI_APPLICATION);
-	wc.hCursor		 = LoadCursor(NULL, IDC_ARROW);
-	wc.hbrBackground = CreateSolidBrush(BACKGROUND);
-	wc.lpszMenuName  = NULL;
-	wc.lpszClassName = g_szClassName;
-	wc.hIconSm		 = LoadIcon(NULL, IDI_APPLICATION);
-
-	if (!RegisterClassEx(&wc)) {
-		MessageBox(NULL, "Window Registration Failed!", "Error!",
-			MB_ICONEXCLAMATION | MB_OK);
-		return 0;
-	}
-
-	main_wnd = CreateWindowEx(
-		WS_EX_CLIENTEDGE,
-		g_szClassName,
-		NAME,
-		WS_OVERLAPPEDWINDOW,
-		CW_USEDEFAULT, CW_USEDEFAULT, WIDTH, HEIGHT,
-		NULL, NULL, hInstance, NULL);
-
-	if (!main_wnd) {
-		MessageBox(NULL, "Window Creation Failed!", "Error!",
-			MB_ICONEXCLAMATION | MB_OK);
-		return 0;
-	}
-
-	ShowWindow(main_wnd, nCmdShow);
-	UpdateWindow(main_wnd);
-
-	while(GetMessage(&Msg, NULL, 0, 0) > 0) {
+	while (GetMessage(&Msg, NULL, 0, 0) > 0) {
 		TranslateMessage(&Msg);
 		DispatchMessage(&Msg);
 	}

@@ -2,24 +2,6 @@
 
 int disp_init = 0;
 
-enum brush_e {
-	blank,
-	border,
-	caret,
-	hl,
-	white,
-	grey,
-	blue,
-	red,
-	n_brushes
-} brushes;
-
-HBRUSH brush[n_brushes] = {NULL};
-int brush_init = 0;
-
-HFONT font = NULL;
-
-HWND window[] = {NULL, NULL, NULL};
 int cur_wnd = 0;
 
 int asm_x = 0, asm_w = 0;
@@ -28,53 +10,39 @@ int wnd_y = 0, wnd_h = 0;
 
 int lheight = 0;
 
-void refresh() {
-	InvalidateRect(window[ASM_WND], NULL, 0);
-	InvalidateRect(window[BIN_WND], NULL, 0);
-	UpdateWindow(window[ASM_WND]);
-	UpdateWindow(window[BIN_WND]);
-}
-
 LRESULT edit_proc(UINT uMsg, WPARAM wParam, LPARAM lParam);
 
 LRESULT CALLBACK asm_edit_func(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	cur_wnd = ASM_WND;
-	window[cur_wnd] = hwnd;
+	set_window(cur_wnd, hwnd);
 	return edit_proc(uMsg, wParam, lParam);
 }
 
 LRESULT CALLBACK bin_edit_func(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	cur_wnd = BIN_WND;
-	window[cur_wnd] = hwnd;
+	set_window(cur_wnd, hwnd);
 	return edit_proc(uMsg, wParam, lParam);
 }
 
+LONG_PTR get_wnd_proc(int wnd) {
+	if (wnd == ASM_WND)
+		return (LONG_PTR)asm_edit_func;
+	else if (wnd == BIN_WND)
+		return (LONG_PTR)bin_edit_func;
+
+	return 0;
+}
+
 void resize_display(int x1, int w1, int x2, int w2, int y, int h) {
-	if (!disp_init) {
-		int style = WS_CHILD | WS_VISIBLE | ES_MULTILINE | DS_LOCALEDIT;
-
-		window[ASM_WND] = spawn_window(WS_EX_CLIENTEDGE, "EDIT", "", style, x1, y, w1, h);
-		window[BIN_WND] = spawn_window(WS_EX_CLIENTEDGE, "EDIT", "", style, x2, y, w2, h);
-
-		// TO-DO: Actual font handling
-		font = (HFONT)GetStockObject(SYSTEM_FIXED_FONT);
-
-		SetWindowLongPtr(window[ASM_WND], GWLP_WNDPROC, (LONG_PTR)asm_edit_func);
-		SetWindowLongPtr(window[BIN_WND], GWLP_WNDPROC, (LONG_PTR)bin_edit_func);
-
-		disp_init = 1;
-	}
-	else {
-		SetWindowPos(window[ASM_WND], NULL, x1, y, w1, h, SWP_NOZORDER);
-		SetWindowPos(window[BIN_WND], NULL, x2, y, w2, h, SWP_NOZORDER);
-	}
-
 	asm_x = x1;
 	asm_w = w1;
 	bin_x = x2;
 	bin_w = w2;
 	wnd_y = y;
 	wnd_h = h;
+
+	SetWindowPos(get_window(ASM_WND), NULL, asm_x, wnd_y, asm_w, wnd_h, SWP_NOZORDER);
+	SetWindowPos(get_window(BIN_WND), NULL, bin_x, wnd_y, bin_w, wnd_h, SWP_NOZORDER);
 }
 
 int window_from_coords(int x, int y) {
@@ -186,7 +154,9 @@ void set_caret_from_coords(int wnd, int x, int y) {
 		return;
 	}
 
-	HDC hdc = GetDC(window[wnd]);
+	HWND hwnd = get_window(wnd);
+	HDC hdc = GetDC(hwnd);
+
 	RECT r = {0};
 	int i, prev, next = 0;
 	int beyond = 1;
@@ -215,7 +185,7 @@ void set_caret_from_coords(int wnd, int x, int y) {
 	if (beyond)
 		line->col = strlen(line->str);
 
-	ReleaseDC(window[wnd], hdc);
+ 	ReleaseDC(hwnd, hdc);
 }
 
 void draw_display(int wnd, HDC hdc) {
@@ -223,29 +193,16 @@ void draw_display(int wnd, HDC hdc) {
 	if (!text || !hdc)
 		return;
 
-	if (!brush_init) {
-		brush[blank] =  CreateSolidBrush(BACKGROUND);
-		brush[border] = CreateSolidBrush(RGB(0xb0, 0xd0, 0xff));
-		brush[caret] =  CreateSolidBrush(RGB(0x20, 0x20, 0x20));
-		brush[hl] =     CreateSolidBrush(RGB(0x20, 0x50, 0xff));
-		brush[white] =  CreateSolidBrush(RGB(0xff, 0xff, 0xff));
-		brush[grey] =   CreateSolidBrush(RGB(0xf0, 0xf0, 0xf0));
-		brush[blue] =   CreateSolidBrush(RGB(0xd0, 0xe8, 0xff));
-		brush[red] =    CreateSolidBrush(RGB(0xff, 0xd0, 0xd0));
-
-		brush_init = 1;
-	}
-
 	// Determine the colour palatte to use
 	HBRUSH outline, back;
 	int focus = get_focus();
 	if (wnd == focus) {
-		outline = brush[border];
-		back = brush[white];
+		outline = get_brush(border);
+		back = get_brush(white);
 	}
 	else {
-		outline = brush[blank];
-		back = brush[grey];
+		outline = get_brush(blank);
+		back = get_brush(grey);
 	}
 
 	int width = wnd == ASM_WND ? asm_w : bin_w;
@@ -275,7 +232,7 @@ void draw_display(int wnd, HDC hdc) {
 	int sel = 0;
 	int y = 0;
 
-	HFONT old_font = (HFONT)SelectObject(hdc, font);
+	HFONT old_font = (HFONT)SelectObject(hdc, get_font(DISP_FONT));
 
 	while (line && y < wnd_h - ((BORDER * 2) + lheight)) {
 		if (line == a && text->sel > 1) {
@@ -284,7 +241,7 @@ void draw_display(int wnd, HDC hdc) {
 		}
 
 		if (wnd == focus && line == text->cur) {
-			highlight_line(wnd, hdc, brush[blue], y);
+			highlight_line(wnd, hdc, get_brush(blue), y);
 			cur = line->col;
 		}
 
@@ -309,7 +266,7 @@ void draw_display(int wnd, HDC hdc) {
 				int a_px = calc_column_distance(hdc, line->str, a_pos);
 				int b_px = calc_column_distance(hdc, line->str, b_pos);
 
-				fill_box(hdc, brush[hl], a_px, top, b_px, top + lheight);
+				fill_box(hdc, get_brush(hl), a_px, top, b_px, top + lheight);
 
 				if (a_pos)
 					TextOut(hdc, left, top, line->str, a_pos);
@@ -325,7 +282,7 @@ void draw_display(int wnd, HDC hdc) {
 				if (sel) {
 					RECT r = {0};
 					DrawText(hdc, line->str, -1, &r, DT_CALCRECT);
-					fill_box(hdc, brush[hl], left, top, left + r.right, top + lheight);
+					fill_box(hdc, get_brush(hl), left, top, left + r.right, top + lheight);
 				}
 				TextOut(hdc, left, top, line->str, len);
 			}
@@ -338,7 +295,7 @@ void draw_display(int wnd, HDC hdc) {
 
 			left += r.right - 1;
 
-			fill_box(hdc, brush[caret], left, top, left + CARET, top + lheight);
+			fill_box(hdc, get_brush(caret), left, top, left + CARET, top + lheight);
 			cur = -1;
 		}
 
@@ -364,10 +321,10 @@ LRESULT edit_proc(UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		return 1;
 
 	if (uMsg == WM_PAINT) {
-		HDC hdc;
 		PAINTSTRUCT ps;
+		HWND hwnd = get_window(cur_wnd);
+		HDC hdc = BeginPaint(hwnd, &ps);
 
-		hdc = BeginPaint(window[cur_wnd], &ps);
 		SetMapMode(hdc, MM_TEXT);
 		SetBkMode(hdc, TRANSPARENT);
 
@@ -387,7 +344,7 @@ LRESULT edit_proc(UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		}
 
 		draw_display(cur_wnd, hdc);
-		EndPaint(window[cur_wnd], &ps);
+		EndPaint(hwnd, &ps);
 	}
 
 	if (uMsg == WM_LBUTTONDOWN) {
@@ -400,7 +357,7 @@ LRESULT edit_proc(UINT uMsg, WPARAM wParam, LPARAM lParam) {
 
 		set_caret_from_coords(cur_wnd, x, y);
 		set_focus(cur_wnd);
-		refresh();
+		refresh_window(cur_wnd);
 	}
 
 	if (uMsg == WM_SETCURSOR) {
@@ -412,14 +369,6 @@ LRESULT edit_proc(UINT uMsg, WPARAM wParam, LPARAM lParam) {
 
 	if (uMsg == WM_NCHITTEST)
 		return HTTRANSPARENT;
-
-	if (uMsg == WM_CLOSE) {
-		int i;
-		for (i = 0; i < n_brushes; i++)
-			DeleteObject(brush[i]);
-
-		brush_init = 0;
-	}
 
 	return 0;
 }
