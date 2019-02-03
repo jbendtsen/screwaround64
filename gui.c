@@ -48,24 +48,57 @@ void set_title(const char *title) {
 	SetWindowText(window[MAIN_WND], title);
 }
 
-#define ID_OFF 32
+int caret_timer[3] = {0}; // first element is unused
 
+int get_caret_timer(int wnd) {
+	return caret_timer[wnd];
+}
+void reset_caret_timer(int wnd) {
+	caret_timer[wnd] = 0;
+}
+
+void tick_caret(int wnd) {
+	caret_timer[wnd]++;
+	if (caret_timer[wnd] >= CARET_BLINK * 2)
+		reset_caret_timer(wnd);
+}
+
+#define TMR_ID_OFF 16
+#define WND_ID_OFF 32
+
+// Intended for the sub-windows, won't work for the main window itself
 int get_window_index(HWND hwnd) {
 	// Add 1 to account for the main window
-	return GetDlgCtrlID(hwnd) - ID_OFF + 1;
+	return GetDlgCtrlID(hwnd) - WND_ID_OFF + 1;
 }
 
 int n_ids = 0;
 
 HWND spawn_window(int ex_style, const char *class, const char *name, int style, int x, int y, int w, int h) {
-	int id = ID_OFF + n_ids;
+	int id = WND_ID_OFF + n_ids;
 	n_ids++;
 
 	return CreateWindowEx(ex_style, class, name, style, x, y, w, h,
 	                      window[MAIN_WND], (HMENU)id, GetModuleHandle(NULL), NULL);
 }
 
-void update_display(int width, int height) {
+LRESULT CALLBACK display_proc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+	int w = get_window_index(hwnd);
+	window[w] = hwnd;
+	invoke_display(w, uMsg, wParam, lParam);
+}
+
+VOID CALLBACK timer_proc(HWND hwnd, UINT uMsg, UINT idTimer, DWORD dwTime) {
+	int w = idTimer - TMR_ID_OFF;
+	window[w] = hwnd;
+
+	if (w == get_focus()) {
+		tick_caret(w);
+		refresh_window(w);
+	}
+}
+
+void resize_mainwnd(int width, int height) {
 	int w = (width - (X_OFF * 2) - MID_GAP) / 2;
 	int h = height - Y_OFF - BOTTOM;
 
@@ -134,12 +167,18 @@ HWND init_gui(HINSTANCE hInstance, WNDPROC main_proc) {
 	// TO-DO: Actual font handling
 	font = (HFONT)GetStockObject(SYSTEM_FIXED_FONT);
 
+	// Create the display windows
 	int style = WS_CHILD | WS_VISIBLE;
 	window[ASM_WND] = spawn_window(WS_EX_CLIENTEDGE, "EDIT", "", style, 0, 0, 0, 0);
 	window[BIN_WND] = spawn_window(WS_EX_CLIENTEDGE, "EDIT", "", style, 0, 0, 0, 0);
 
-	SetWindowLongPtr(window[ASM_WND], GWLP_WNDPROC, get_wnd_proc(ASM_WND));
-	SetWindowLongPtr(window[BIN_WND], GWLP_WNDPROC, get_wnd_proc(BIN_WND));
+	// Give them our custom window process (ie. update function)
+	SetWindowLongPtr(window[ASM_WND], GWLP_WNDPROC, (LONG_PTR)display_proc);
+	SetWindowLongPtr(window[BIN_WND], GWLP_WNDPROC, (LONG_PTR)display_proc);
+
+	// Give them a timer function, for the blinking caret
+	SetTimer(window[ASM_WND], TMR_ID_OFF + ASM_WND, TIMER_TICK, timer_proc);
+	SetTimer(window[BIN_WND], TMR_ID_OFF + BIN_WND, TIMER_TICK, timer_proc);
 
 	style = WS_CHILD | WS_VISIBLE | SS_LEFT;
 	window[ASM_HEAD] = spawn_window(0, "STATIC", "Assembly", style, 0, 0, 0, 0);

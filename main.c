@@ -20,6 +20,9 @@ void stop_editing() {
 	refresh_window(BIN_WND);
 	editing = 0;
 }
+int is_editing() {
+	return editing;
+}
 
 int get_focus() {
 	return focus;
@@ -31,6 +34,8 @@ void set_focus(int wnd) {
 
 	int old_focus = focus;
 	focus = wnd;
+
+	reset_caret_timer(focus);
 	refresh_window(old_focus);
 }
 
@@ -60,6 +65,15 @@ text_t *opposed_text(text_t *text) {
 	return NULL;
 }
 
+void process_line() {
+	if (focus == ASM_WND)
+		assemble(asm_text_cur->cur);
+	else if (focus == BIN_WND)
+		disassemble(bin_text_cur->cur);
+
+	stop_editing();
+}
+
 int key_mod = 0;
 int lb_held = 0;
 
@@ -73,7 +87,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 
 			new_project(&ctx);
 
-			update_display(WIDTH, HEIGHT);
+			resize_mainwnd(WIDTH, HEIGHT);
 
 			focus = ASM_WND;
 			break;
@@ -86,7 +100,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			int width = rect.right;
 			int height = rect.bottom;
 
-			update_display(width, height);
+			resize_mainwnd(width, height);
 			break;
 		}
 		case WM_CTLCOLORSTATIC:
@@ -107,9 +121,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				case VK_SHIFT:
 					key_mod |= SHIFT;
 					break;
+
 				case VK_ESCAPE:
-					set_focus(0);
+					if (is_editing())
+						process_line();
+					else
+						set_focus(0);
 					break;
+
 				case VK_TAB:
 					if (focus == ASM_WND)
 						set_focus(BIN_WND);
@@ -195,6 +214,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				}
 			}
 
+			reset_caret_timer(focus);
 			refresh_window(focus);
 			break;
 		}
@@ -219,6 +239,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 
 			start_editing();
 			insert_char(wParam);
+
+			reset_caret_timer(focus);
 			refresh_window(focus);
 			break;
 		}
@@ -235,6 +257,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				start_selection(text_of(focus));
 			}
 
+			reset_caret_timer(focus);
 			refresh_window(focus);
 			break;
 		}
@@ -248,6 +271,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				update_selection(text_of(focus));
 			}
 
+			reset_caret_timer(focus);
 			refresh_window(focus);
 			break;
 		}
@@ -282,6 +306,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			else if (delta < 0 && txt->cur->next)
 				set_row(txt, txt->cur->next);
 
+			reset_caret_timer(focus);
 			refresh_window(focus);
 			break;
 		}

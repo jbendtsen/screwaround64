@@ -8,29 +8,14 @@ int asm_x = 0, asm_w = 0;
 int bin_x = 0, bin_w = 0;
 int wnd_y = 0, wnd_h = 0;
 
+int lspace = 0;
 int lheight = 0;
 
-LRESULT edit_proc(UINT uMsg, WPARAM wParam, LPARAM lParam);
+int update_display(UINT uMsg, WPARAM wParam, LPARAM lParam);
 
-LRESULT CALLBACK asm_edit_func(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-	cur_wnd = ASM_WND;
-	set_window(cur_wnd, hwnd);
-	return edit_proc(uMsg, wParam, lParam);
-}
-
-LRESULT CALLBACK bin_edit_func(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-	cur_wnd = BIN_WND;
-	set_window(cur_wnd, hwnd);
-	return edit_proc(uMsg, wParam, lParam);
-}
-
-LONG_PTR get_wnd_proc(int wnd) {
-	if (wnd == ASM_WND)
-		return (LONG_PTR)asm_edit_func;
-	else if (wnd == BIN_WND)
-		return (LONG_PTR)bin_edit_func;
-
-	return 0;
+int invoke_display(int wnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+	cur_wnd = wnd;
+	return update_display(uMsg, wParam, lParam);
 }
 
 void resize_display(int x1, int w1, int x2, int w2, int y, int h) {
@@ -84,10 +69,11 @@ void highlight_line(int wnd, HDC hdc, HBRUSH brush, int y) {
 int calc_column_distance(HDC hdc, char *str, int col) {
 	int offset = BORDER + MARGIN;
 
-	if (!hdc || !str || !strlen(str) || col <= 0)
+	if (!hdc || !str || !strlen(str) || col == 0)
 		return offset;
 
-	col = col < strlen(str) ? col : strlen(str);
+	int len = strlen(str);
+	col = (col >= 0 && col < len) ? col : len;
 
 	RECT r = {0};
 	DrawText(hdc, str, col, &r, DT_CALCRECT);
@@ -188,6 +174,16 @@ void set_caret_from_coords(int wnd, int x, int y) {
  	ReleaseDC(hwnd, hdc);
 }
 
+struct sc_point {
+	HDC hdc;
+	int x, y;
+};
+
+void render_text(struct sc_point *disp, char *str, int len) {
+	if (len <= 0) len = strlen(str);
+	TextOut(disp->hdc, disp->x, disp->y, str, len);
+}
+
 void draw_display(int wnd, HDC hdc) {
 	text_t *text = text_of(wnd);
 	if (!text || !hdc)
@@ -228,8 +224,8 @@ void draw_display(int wnd, HDC hdc) {
 
 	COLORREF def = 0;
 	line_t *line = text->top;
-	int cur = -1;
-	int sel = 0;
+
+	int multi_sel = 0;
 	int y = 0;
 
 	HFONT old_font = (HFONT)SelectObject(hdc, get_font(DISP_FONT));
@@ -237,16 +233,17 @@ void draw_display(int wnd, HDC hdc) {
 	while (line && y < wnd_h - ((BORDER * 2) + lheight)) {
 		if (line == a && text->sel > 1) {
 			def = SetTextColor(hdc, WHITE);
-			sel = 1;
+			multi_sel = 1;
 		}
 
 		if (wnd == focus && line == text->cur) {
-			highlight_line(wnd, hdc, get_brush(blue), y);
-			cur = line->col;
+			HBRUSH colour = is_editing() ? get_brush(blue) : get_brush(grey);
+			highlight_line(wnd, hdc, colour, y);
 		}
 
 		int top = BORDER + y;
 		int left = BORDER + MARGIN;
+		struct sc_point disp = {hdc, left, top + lspace};
 
 		if (line->str) {
 			int len = strlen(line->str);
@@ -268,40 +265,42 @@ void draw_display(int wnd, HDC hdc) {
 
 				fill_box(hdc, get_brush(hl), a_px, top, b_px, top + lheight);
 
-				if (a_pos)
-					TextOut(hdc, left, top, line->str, a_pos);
+				if (a_pos > 0)
+					render_text(&disp, line->str, a_pos);
 
 				def = SetTextColor(hdc, WHITE);
-				TextOut(hdc, a_px, top, line->str + a_pos, b_pos - a_pos);
+
+				disp.x = a_px;
+				render_text(&disp, line->str + a_pos, b_pos - a_pos);
+
 				SetTextColor(hdc, def);
 
-				if (b_pos < len)
-					TextOut(hdc, b_px, top, line->str + b_pos, len - b_pos);
+				if (b_pos < len) {
+					disp.x = b_px;
+					render_text(&disp, line->str + b_pos, 0);
+				}
 			}
 			else {
-				if (sel) {
-					RECT r = {0};
-					DrawText(hdc, line->str, -1, &r, DT_CALCRECT);
-					fill_box(hdc, get_brush(hl), left, top, left + r.right, top + lheight);
+				if (multi_sel) {
+					int x = left - MARGIN;
+					fill_box(hdc, get_brush(hl), x, top, width - x, top + lheight);
 				}
-				TextOut(hdc, left, top, line->str, len);
+				render_text(&disp, line->str, 0);
 			}
 		}
 
-		if (cur >= 0) {
-			RECT r = {0};
-			if (line->str)
-				DrawText(hdc, line->str, line->col, &r, DT_CALCRECT);
+		if (wnd == focus) {
+			if (line == text->cur) {
+				if (get_caret_timer(wnd) < CARET_BLINK) {
+					int x = calc_column_distance(hdc, line->str, line->col) - 1;
+					fill_box(hdc, get_brush(caret), x, top, x + CARET, top + lheight);
+				}
+			}
 
-			left += r.right - 1;
-
-			fill_box(hdc, get_brush(caret), left, top, left + CARET, top + lheight);
-			cur = -1;
-		}
-
-		if (line == b && text->sel > 1) {
-			SetTextColor(hdc, def);
-			sel = 0;
+			if (line == b && text->sel > 1) {
+				SetTextColor(hdc, def);
+				multi_sel = 0;
+			}
 		}
 
 		y += lheight;
@@ -313,7 +312,7 @@ void draw_display(int wnd, HDC hdc) {
 
 HCURSOR ibeam = NULL;
 
-LRESULT edit_proc(UINT uMsg, WPARAM wParam, LPARAM lParam) {
+int update_display(UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	if (uMsg == WM_GETDLGCODE)
 		return DLGC_WANTALLKEYS;
 
@@ -332,15 +331,19 @@ LRESULT edit_proc(UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			TEXTMETRIC tm = {0};
 			GetTextMetrics(hdc, &tm);
 
-			int pixels_per_inch = GetDeviceCaps(hdc, LOGPIXELSY); // varies with different displays
+			// A 'point' is a unit of measurement equivalent to 1/72th of an inch.
+			// The value returned here will depend on the display configuration.
+			float pixels_per_point = (float)GetDeviceCaps(hdc, LOGPIXELSY) / 72.0;
 
 			/*
 				To convert our height from LUs to pixels, we multiply it by the number of pixels per LU,
 				which is broken into 2 steps to reduce loss from integer truncation:
 			*/
-			lheight = tm.tmHeight + tm.tmExternalLeading; // total height in Logical Units (1 LU = 1/72 inch)
-			lheight *= pixels_per_inch;
-			lheight /= 72; // divide by 72 to get the final answer
+			lspace = tm.tmInternalLeading + tm.tmExternalLeading;
+			lspace = (float)lspace * pixels_per_point / 2.0;
+
+			lheight = tm.tmHeight + tm.tmExternalLeading;
+			lheight = (float)lheight * pixels_per_point;
 		}
 
 		draw_display(cur_wnd, hdc);

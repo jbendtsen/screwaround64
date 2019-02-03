@@ -37,6 +37,9 @@
 #define WHITE      RGB(0xff, 0xff, 0xff)
 #define BACKGROUND RGB(0xe0, 0xe0, 0xe0)
 
+#define CARET_BLINK 10
+#define TIMER_TICK 100
+
 #define LINE_MAX 64
 
 typedef unsigned char u8;
@@ -173,16 +176,18 @@ void set_window(int idx, HWND hwnd);
 void refresh_window(int idx);
 void set_title(const char *title);
 
+int get_caret_timer(int wnd);
+void reset_caret_timer(int wnd);
+void tick_caret(int wnd);
+
 int get_window_index(HWND hwnd);
 HWND spawn_window(int ex_style, const char *class, const char *name, int style, int x, int y, int w, int h);
 
-void update_display(int width, int height);
+void resize_mainwnd(int width, int height);
 
 HWND init_gui(HINSTANCE hInstance, WNDPROC main_proc);
 
 // display.c
-
-LONG_PTR get_wnd_proc(int wnd);
 
 void resize_display(int asm_x, int asm_w, int bin_x, int bin_w, int y, int h);
 
@@ -193,6 +198,7 @@ void set_caret_from_coords(int wnd, int x, int y);
 
 void start_editing();
 void stop_editing();
+int is_editing();
 
 int get_focus(void);
 void set_focus(int wnd);
@@ -207,6 +213,6 @@ void init_debug(void);
 void debug_string(char *str);
 
 void debug_winmsg(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-void debug_wndctl(int idx);
+void debug_xy(int x, int y);
 
 #endif

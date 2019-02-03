@@ -63,12 +63,13 @@ struct dbg msg_dbg = {
 	"mousewheel", 0, &msg_vars[0], 4
 };
 
-struct var ctl_vars[] = {
-	{"wnd", 0, NULL}
+struct var xy_vars[] = {
+	{"X", 0, NULL},
+	{"Y", 0, NULL},
 };
 
-struct dbg ctl_dbg = {
-	"ctlcolorstatic", 0, &ctl_vars[0], 1
+struct dbg xy_dbg = {
+	"Timer Creation", 0, &xy_vars[0], 2
 };
 
 void debug_winmsg(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -79,9 +80,10 @@ void debug_winmsg(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	debug_out(&msg_dbg);
 }
 
-void debug_wndctl(int idx) {
-	ctl_vars[0].value = (void*)idx;
-	debug_out(&ctl_dbg);
+void debug_xy(int x, int y) {
+	xy_vars[0].value = (void*)x;
+	xy_vars[1].value = (void*)y;
+	debug_out(&xy_dbg);
 }
 
 #endif

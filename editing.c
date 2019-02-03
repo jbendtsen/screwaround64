@@ -594,16 +594,3 @@ void set_row(text_t *text, line_t *row) {
 		other->top = text->top->equiv;
 	}
 }
-
-void process_line() {
-	text_t *focus = text_of(get_focus());
-	if (!focus || !focus->cur)
-		return;
-
-	if (focus->type == ASM_WND)
-		assemble(focus->cur);
-	else if (focus->type == BIN_WND)
-		disassemble(focus->cur);
-
-	stop_editing();
-}
