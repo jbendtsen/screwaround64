@@ -31,19 +31,18 @@ void add_tab(project_t *proj) {
 	proj->tab = realloc(proj->tab, ++proj->n_tabs * sizeof(tab_t));
 
 	tab_t *tab = &proj->tab[last];
+	memset(tab, 0, sizeof(tab_t));
 	create_texts(tab);
 
-	tab->asm_text.type = ASM_WND;
-	tab->bin_text.type = BIN_WND;
+	//tab->asm_text.type = ASM_WND;
+	//tab->bin_text.type = BIN_WND;
 }
 
 void switch_tab(project_t *proj, int idx) {
 	if (idx < 0) idx = proj->n_tabs - 1;
 	if (idx >= proj->n_tabs) idx = 0;
 
-	tab_t *tab = &proj->tab[idx];
-	set_texts(&tab->asm_text, &tab->bin_text);
-
+	set_texts(&proj->tab[idx]);
 	proj->idx = idx;
 }
 
@@ -60,6 +59,6 @@ void delete_tab(project_t *proj, int idx) {
 		if (idx > 0)
 			switch_tab(proj, idx - 1);
 		else
-			set_texts(NULL, NULL);
+			set_texts(NULL);
 	}
 }

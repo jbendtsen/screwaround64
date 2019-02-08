@@ -1,17 +1,21 @@
 #include "header.h"
 
+void init_text(text_t *txt) {
+	txt->first = calloc(1, sizeof(line_t));
+	txt->top = txt->cur = txt->last = txt->first;
+}
+
 void create_texts(tab_t *tab) {
+	init_text(&tab->asm_text);
+	init_text(&tab->bin_text);
+	init_text(&tab->err_list);
+	init_text(&tab->err_info);
+
 	text_t *a = &tab->asm_text;
 	text_t *b = &tab->bin_text;
 
-	a->first = calloc(1, sizeof(line_t));
-	b->first = calloc(1, sizeof(line_t));
-
 	a->first->equiv = b->first;
 	b->first->equiv = a->first;
-
-	a->top = a->cur = a->last = a->first;
-	b->top = b->cur = b->last = b->first;
 }
 
 void close_text(text_t *text) {
@@ -65,8 +69,11 @@ void add_line(text_t *text, line_t *equivalent, int above) {
 		equivalent->equiv = line;
 	}
 	// Otherwise, add a new line using this new line as the equivalent line
-	else
-		add_line(opposed_text(text), line, above);
+	else {
+		text_t *other = opposed_text(text);
+		if (other)
+			add_line(other, line, above);
+	}
 }
 
 int line_count(line_t *top, line_t *bottom) {
@@ -117,8 +124,13 @@ line_t *walk_lines(line_t *line, int count) {
 	}
 
 	int i;
-	for (i = 0; i < count && line; i++)
-		line = back ? line->prev : line->next;
+	for (i = 0; i < count; i++) {
+		line_t *next = back ? line->prev : line->next;
+		if (!next)
+			break;
+		else
+			line = next;
+	}
 
 	return line;
 }
@@ -281,7 +293,7 @@ void delete_selection(text_t *text) {
 #define ARROW_DOWN  3
 
 void move_cursor(int dir, int shift) {
-	text_t *txt = text_of(get_focus());
+	text_t *txt = focussed_text();
 	if (!txt->cur) {
 		//printf("No focus, no ambition, no nothin\n");
 		return;
@@ -321,7 +333,7 @@ void move_cursor(int dir, int shift) {
 }
 
 void delete_text(int back, int shift) {
-	text_t *txt = text_of(get_focus());
+	text_t *txt = focussed_text();
 	if (!txt || !txt->cur)
 		return;
 
@@ -359,7 +371,7 @@ void delete_text(int back, int shift) {
 }
 
 void insert_char(char ch) {
-	text_t *text = text_of(get_focus());
+	text_t *text = focussed_text();
 	if (!text || ch < ' ' || ch > '~')
 		return;
 
@@ -409,7 +421,7 @@ char *addstr(char *str, char *add, int *pos) {
 }
 
 void copy_text(int cut) {
-	text_t *txt = text_of(get_focus());
+	text_t *txt = focussed_text();
 	if (!txt || !txt->sel)
 		return;
 
@@ -476,7 +488,7 @@ void copy_text(int cut) {
 }
 
 void paste_text() {
-	text_t *txt = text_of(get_focus());
+	text_t *txt = focussed_text();
 	if (!txt) return;
 
 	if (!OpenClipboard(NULL))
@@ -571,26 +583,25 @@ void set_column(text_t *text, int col) {
 }
 
 void set_row(text_t *text, line_t *row) {
-	if (!text || !row)
+	int idx = window_from_text(text);
+	if (idx < 0 || !text || !row)
 		return;
 
 	process_line();
 	text->cur = row;
 
-	text_t *other = opposed_text(text);
-	other->cur = text->cur->equiv;
-
 	int seek = find_line(text->top, text->cur);
-	if (seek < 0) {
+	if (seek < 0)
 		text->top = text->cur;
-		other->top = text->top->equiv;
-		return;
+	else {
+		int n_lines = calc_visible_lines(idx, text->top);
+		if (seek >= n_lines)
+			text->top = walk_lines(text->top, seek - n_lines + 1);
 	}
 
-	int n_lines = calc_visible_lines(text->top);
-
-	if (seek >= n_lines) {
-		text->top = walk_lines(text->top, seek - n_lines + 1);
+	text_t *other = opposed_text(text);
+	if (other) {
+		other->cur = text->cur->equiv;
 		other->top = text->top->equiv;
 	}
 }

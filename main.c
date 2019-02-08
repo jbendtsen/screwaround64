@@ -6,7 +6,7 @@
 project_t ctx;
 
 int focus = 0;
-int hover = 0;
+//int hover = 0;
 
 int editing = 0;
 
@@ -27,6 +27,9 @@ int is_editing() {
 int get_focus() {
 	return focus;
 }
+text_t *focussed_text(void) {
+	return text_of(focus);
+}
 
 void set_focus(int wnd) {
 	if (focus != wnd)
@@ -39,37 +42,12 @@ void set_focus(int wnd) {
 	refresh_window(old_focus);
 }
 
-text_t *asm_text_cur = NULL;
-text_t *bin_text_cur = NULL;
-
-void set_texts(text_t *asm_txt, text_t *bin_txt) {
-	asm_text_cur = asm_txt;
-	bin_text_cur = bin_txt;
-}
-
-text_t *text_of(int wnd) {
-	if (wnd == ASM_WND)
-		return asm_text_cur;
-	if (wnd == BIN_WND)
-		return bin_text_cur;
-
-	return NULL;
-}
-
-text_t *opposed_text(text_t *text) {
-	if (text == asm_text_cur)
-		return bin_text_cur;
-	if (text == bin_text_cur)
-		return asm_text_cur;
-
-	return NULL;
-}
-
 void process_line() {
+	text_t *txt = focussed_text();
 	if (focus == ASM_WND)
-		assemble(asm_text_cur->cur);
+		assemble(txt->cur);
 	else if (focus == BIN_WND)
-		disassemble(bin_text_cur->cur);
+		disassemble(txt->cur);
 
 	stop_editing();
 }
@@ -78,7 +56,7 @@ int key_mod = 0;
 int lb_held = 0;
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-	set_window(MAIN_WND, hwnd);
+	get_window(MAIN_WND)->hwnd = hwnd;
 
 	switch(uMsg) {
 		case WM_CREATE:
@@ -87,7 +65,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 
 			new_project(&ctx);
 
-			resize_mainwnd(WIDTH, HEIGHT);
+			resize_subwindows(WIDTH, HEIGHT);
 
 			focus = ASM_WND;
 			break;
@@ -100,13 +78,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			int width = rect.right;
 			int height = rect.bottom;
 
-			resize_mainwnd(width, height);
+			resize_subwindows(width, height);
 			break;
 		}
 		case WM_CTLCOLORSTATIC:
 		{
-			int wnd = get_window_index((HWND)lParam);
-			if (wnd != ASM_HEAD && wnd != BIN_HEAD)
+			int idx = window_from_handle((HWND)lParam);
+			if (idx != ASM_HEAD && idx != BIN_HEAD)
 				break;
 
 			SetBkMode((HDC)wParam, TRANSPARENT);
@@ -158,10 +136,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				}
 
 				case VK_HOME:
-					set_column(text_of(focus), 0);
+					set_column(focussed_text(), 0);
 					break;
 				case VK_END:
-					set_column(text_of(focus), -1);
+					set_column(focussed_text(), -1);
 					break;
 
 				case VK_DELETE:
@@ -175,7 +153,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				case VK_RETURN:
 				{
 					//start_editing();
-					text_t *txt = text_of(focus);
+					text_t *txt = focussed_text();
 					int above = (key_mod & SHIFT) | (txt->cur->col == 0);
 
 					add_line(txt, NULL, above);
@@ -204,7 +182,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 					case 'a': // select all
 					case 'A':
 					{
-						text_t *txt = text_of(focus);
+						text_t *txt = focussed_text();
 
 						txt->start = txt->first;
 						txt->end = txt->last;
@@ -251,12 +229,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 
 			set_focus(window_from_coords(x, y));
 
-			lb_held = 1;
-			if (focus) {
+			text_t *txt = focussed_text();
+			if (txt) {
 				set_caret_from_coords(focus, x, y);
-				start_selection(text_of(focus));
+				start_selection(txt);
 			}
 
+			lb_held = 1;
 			reset_caret_timer(focus);
 			refresh_window(focus);
 			break;
@@ -266,9 +245,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			int x = lParam & 0xffff;
 			int y = lParam >> 16;
 
-			if (lb_held && focus) {
+			text_t *txt = focussed_text();
+			if (lb_held && txt) {
 				set_caret_from_coords(focus, x, y);
-				update_selection(text_of(focus));
+				update_selection(txt);
 			}
 
 			reset_caret_timer(focus);
@@ -277,7 +257,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		}
 		case WM_LBUTTONUP:
 		{
-			text_t *txt = text_of(focus);
+			text_t *txt = focussed_text();
 
 			if (txt && txt->start && txt->sel == 1 &&
 				txt->start->start == txt->start->end)
@@ -296,7 +276,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			int y = (lParam >> 16) - r.top;
 			set_focus(window_from_coords(x, y));
 
-			text_t *txt = text_of(focus);
+			text_t *txt = focussed_text();
 			if (!txt || !txt->cur)
 				break;
 

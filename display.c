@@ -1,47 +1,5 @@
 #include "header.h"
 
-int disp_init = 0;
-
-int cur_wnd = 0;
-
-int asm_x = 0, asm_w = 0;
-int bin_x = 0, bin_w = 0;
-int wnd_y = 0, wnd_h = 0;
-
-int lspace = 0;
-int lheight = 0;
-
-int update_display(UINT uMsg, WPARAM wParam, LPARAM lParam);
-
-int invoke_display(int wnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-	cur_wnd = wnd;
-	return update_display(uMsg, wParam, lParam);
-}
-
-void resize_display(int x1, int w1, int x2, int w2, int y, int h) {
-	asm_x = x1;
-	asm_w = w1;
-	bin_x = x2;
-	bin_w = w2;
-	wnd_y = y;
-	wnd_h = h;
-
-	SetWindowPos(get_window(ASM_WND), NULL, asm_x, wnd_y, asm_w, wnd_h, SWP_NOZORDER);
-	SetWindowPos(get_window(BIN_WND), NULL, bin_x, wnd_y, bin_w, wnd_h, SWP_NOZORDER);
-}
-
-int window_from_coords(int x, int y) {
-	if (y < wnd_y || y >= wnd_y + wnd_h)
-		return MAIN_WND;
-
-	if (x >= asm_x && x < asm_x + asm_w)
-		return ASM_WND;
-	if (x >= bin_x && x < bin_x + bin_w)
-		return BIN_WND;
-
-	return MAIN_WND;
-}
-
 void fill_box(HDC hdc, HBRUSH br, int left, int top, int right, int bottom) {
 	RECT r;
 	r.left = left;
@@ -52,17 +10,16 @@ void fill_box(HDC hdc, HBRUSH br, int left, int top, int right, int bottom) {
 	FillRect(hdc, &r, br);
 }
 
-void highlight_line(int wnd, HDC hdc, HBRUSH brush, int y) {
-	if (!hdc || !brush || y < 0 || y > wnd_h - lheight)
+void highlight_line(int idx, HDC hdc, HBRUSH brush, int y) {
+	window_t *wnd = get_window(idx);
+	if (!hdc || !brush || y < 0 || y > wnd->h - wnd->lheight)
 		return;
-
-	int width = wnd == ASM_WND ? asm_w : bin_w;
 
 	RECT r;
 	r.left = BORDER;
 	r.top = BORDER + y;
-	r.right = width - BORDER;
-	r.bottom = BORDER + y + lheight;
+	r.right = wnd->w - BORDER;
+	r.bottom = BORDER + y + wnd->lheight;
 	FillRect(hdc, &r, brush);
 }
 
@@ -80,13 +37,16 @@ int calc_column_distance(HDC hdc, char *str, int col) {
 	return offset + r.right;
 }
 
-int calc_visible_lines(line_t *top) {
+int calc_visible_lines(int idx, line_t *top) {
 	if (!top)
 		return 0;
 
+	window_t *wnd = get_window(idx);
+
 	int n = 0;
 	line_t *line = top;
-	while (line && (n * lheight) < wnd_h - ((BORDER * 2) + lheight)) {
+
+	while (line && (n * wnd->lheight) < wnd->h - ((BORDER * 2) + wnd->lheight)) {
 		n++;
 		line = line->next;
 	}
@@ -94,43 +54,33 @@ int calc_visible_lines(line_t *top) {
 	return n;
 }
 
-void set_caret_from_coords(int wnd, int x, int y) {
-	if (wnd != ASM_WND && wnd != BIN_WND)
+void set_caret_from_coords(int idx, int x, int y) {
+	window_t *wnd = get_window(idx);
+	if (!wnd->text)
 		return;
 
-	int x_wnd, w_wnd;
-	if (wnd == ASM_WND) {
-		x_wnd = asm_x;
-		w_wnd = asm_w;
-	}
-	else {
-		x_wnd = bin_x;
-		w_wnd = bin_w;
-	}
+	x -= wnd->x;
+	y -= wnd->y;
 
-	x -= x_wnd;
-	y -= wnd_y;
-
-	if (x < 0 || x >= w_wnd || y < 0 || y >= wnd_h)
+	if (x < 0 || x >= wnd->w || y < 0 || y >= wnd->h)
 		return;
 
 	// Find the row
 
-	text_t *text = text_of(wnd);
-	line_t *line = text->top;
+	line_t *line = wnd->text->top;
 	int c = 0, top = BORDER;
 
-	while (line && (c * lheight) < wnd_h - (top + lheight + BORDER)) {
-		if (top + (c + 1) * lheight > y)
+	while (line && (c * wnd->lheight) < wnd->h - (top + wnd->lheight + BORDER)) {
+		if (top + (c + 1) * wnd->lheight > y)
 			break;
 
 		c++;
 		line = line->next;
 	}
 	if (!line)
-		line = text->last;
+		line = wnd->text->last;
 
-	set_row(text, line);
+	set_row(wnd->text, line);
 
 	// Find the column
 
@@ -140,8 +90,7 @@ void set_caret_from_coords(int wnd, int x, int y) {
 		return;
 	}
 
-	HWND hwnd = get_window(wnd);
-	HDC hdc = GetDC(hwnd);
+	HDC hdc = GetDC(wnd->hwnd);
 
 	RECT r = {0};
 	int i, prev, next = 0;
@@ -171,7 +120,7 @@ void set_caret_from_coords(int wnd, int x, int y) {
 	if (beyond)
 		line->col = strlen(line->str);
 
- 	ReleaseDC(hwnd, hdc);
+ 	ReleaseDC(wnd->hwnd, hdc);
 }
 
 struct sc_point {
@@ -184,15 +133,16 @@ void render_text(struct sc_point *disp, char *str, int len) {
 	TextOut(disp->hdc, disp->x, disp->y, str, len);
 }
 
-void draw_display(int wnd, HDC hdc) {
-	text_t *text = text_of(wnd);
+void draw_edit_window(int idx, HDC hdc) {
+	window_t *wnd = get_window(idx);
+	text_t *text = wnd->text;
 	if (!text || !hdc)
 		return;
 
 	// Determine the colour palatte to use
 	HBRUSH outline, back;
 	int focus = get_focus();
-	if (wnd == focus) {
+	if (idx == focus) {
 		outline = get_brush(border);
 		back = get_brush(white);
 	}
@@ -201,16 +151,14 @@ void draw_display(int wnd, HDC hdc) {
 		back = get_brush(grey);
 	}
 
-	int width = wnd == ASM_WND ? asm_w : bin_w;
-
 	// Paint the border
-	fill_box(hdc, outline, 0, 0, width, BORDER); // the whole top
-	fill_box(hdc, outline, 0, wnd_h - BORDER, width, wnd_h); // the whole bottom
-	fill_box(hdc, outline, 0, BORDER, BORDER, wnd_h - BORDER); // the remainder on the left
-	fill_box(hdc, outline, width - BORDER, BORDER, width, wnd_h - BORDER); // the remainder on the right
+	fill_box(hdc, outline, 0, 0, wnd->w, BORDER); // the whole top
+	fill_box(hdc, outline, 0, wnd->h - BORDER, wnd->w, wnd->h); // the whole bottom
+	fill_box(hdc, outline, 0, BORDER, BORDER, wnd->h - BORDER); // the remainder on the left
+	fill_box(hdc, outline, wnd->w - BORDER, BORDER, wnd->w, wnd->h - BORDER); // the remainder on the right
 
 	// Paint the background
-	fill_box(hdc, back, BORDER, BORDER, width - BORDER, wnd_h - BORDER);
+	fill_box(hdc, back, BORDER, BORDER, wnd->w - BORDER, wnd->h - BORDER);
 
 	// Get the start and end points for the current selection (if there is one)
 	// If the end point is before the start point, swap our copies of the points
@@ -228,22 +176,22 @@ void draw_display(int wnd, HDC hdc) {
 	int multi_sel = 0;
 	int y = 0;
 
-	HFONT old_font = (HFONT)SelectObject(hdc, get_font(DISP_FONT));
+	HFONT old_font = (HFONT)SelectObject(hdc, wnd->font);
 
-	while (line && y < wnd_h - ((BORDER * 2) + lheight)) {
+	while (line && y < wnd->h - ((BORDER * 2) + wnd->lheight)) {
 		if (line == a && text->sel > 1) {
 			def = SetTextColor(hdc, WHITE);
 			multi_sel = 1;
 		}
 
-		if (wnd == focus && line == text->cur) {
+		if (idx == focus && line == text->cur) {
 			HBRUSH colour = is_editing() ? get_brush(blue) : get_brush(grey);
-			highlight_line(wnd, hdc, colour, y);
+			highlight_line(idx, hdc, colour, y);
 		}
 
 		int top = BORDER + y;
 		int left = BORDER + MARGIN;
-		struct sc_point disp = {hdc, left, top + lspace};
+		struct sc_point disp = {hdc, left, top + wnd->lspace};
 
 		if (line->str) {
 			int len = strlen(line->str);
@@ -263,7 +211,7 @@ void draw_display(int wnd, HDC hdc) {
 				int a_px = calc_column_distance(hdc, line->str, a_pos);
 				int b_px = calc_column_distance(hdc, line->str, b_pos);
 
-				fill_box(hdc, get_brush(hl), a_px, top, b_px, top + lheight);
+				fill_box(hdc, get_brush(hl), a_px, top, b_px, top + wnd->lheight);
 
 				if (a_pos > 0)
 					render_text(&disp, line->str, a_pos);
@@ -283,17 +231,17 @@ void draw_display(int wnd, HDC hdc) {
 			else {
 				if (multi_sel) {
 					int x = left - MARGIN;
-					fill_box(hdc, get_brush(hl), x, top, width - x, top + lheight);
+					fill_box(hdc, get_brush(hl), x, top, wnd->w - x, top + wnd->lheight);
 				}
 				render_text(&disp, line->str, 0);
 			}
 		}
 
-		if (wnd == focus) {
+		if (idx == focus) {
 			if (line == text->cur) {
-				if (get_caret_timer(wnd) < CARET_BLINK) {
+				if (wnd->timer < CARET_BLINK) {
 					int x = calc_column_distance(hdc, line->str, line->col) - 1;
-					fill_box(hdc, get_brush(caret), x, top, x + CARET, top + lheight);
+					fill_box(hdc, get_brush(caret), x, top, x + CARET, top + wnd->lheight);
 				}
 			}
 
@@ -303,16 +251,39 @@ void draw_display(int wnd, HDC hdc) {
 			}
 		}
 
-		y += lheight;
+		y += wnd->lheight;
 		line = line->next;
 	}
 
 	SelectObject(hdc, old_font);
 }
 
+void get_font_height(window_t *wnd, HDC hdc) {
+	TEXTMETRIC tm = {0};
+	GetTextMetrics(hdc, &tm);
+
+	// A 'point' is a unit of measurement equivalent to 1/72th of an inch.
+	// The value returned here will depend on the display configuration.
+	float pixels_per_point = (float)GetDeviceCaps(hdc, LOGPIXELSY) / 72.0;
+
+	/*
+		To convert our height from LUs to pixels, we multiply it by the number of pixels per LU,
+		which is broken into 2 steps to reduce loss from integer truncation:
+	*/
+	wnd->lspace = tm.tmInternalLeading + tm.tmExternalLeading;
+	wnd->lspace = (float)wnd->lspace * pixels_per_point / 2.0;
+
+	wnd->lheight = tm.tmHeight + tm.tmExternalLeading;
+	wnd->lheight = (float)wnd->lheight * pixels_per_point;
+}
+
 HCURSOR ibeam = NULL;
 
-int update_display(UINT uMsg, WPARAM wParam, LPARAM lParam) {
+int error_display(int idx, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+	return code_display(idx, uMsg, wParam, lParam);
+}
+
+int code_display(int idx, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	if (uMsg == WM_GETDLGCODE)
 		return DLGC_WANTALLKEYS;
 
@@ -321,46 +292,30 @@ int update_display(UINT uMsg, WPARAM wParam, LPARAM lParam) {
 
 	if (uMsg == WM_PAINT) {
 		PAINTSTRUCT ps;
-		HWND hwnd = get_window(cur_wnd);
-		HDC hdc = BeginPaint(hwnd, &ps);
+		window_t *wnd = get_window(idx);
+		HDC hdc = BeginPaint(wnd->hwnd, &ps);
 
 		SetMapMode(hdc, MM_TEXT);
 		SetBkMode(hdc, TRANSPARENT);
 
-		if (!lheight) {
-			TEXTMETRIC tm = {0};
-			GetTextMetrics(hdc, &tm);
+		if (!wnd->lheight)
+			get_font_height(wnd, hdc);
 
-			// A 'point' is a unit of measurement equivalent to 1/72th of an inch.
-			// The value returned here will depend on the display configuration.
-			float pixels_per_point = (float)GetDeviceCaps(hdc, LOGPIXELSY) / 72.0;
-
-			/*
-				To convert our height from LUs to pixels, we multiply it by the number of pixels per LU,
-				which is broken into 2 steps to reduce loss from integer truncation:
-			*/
-			lspace = tm.tmInternalLeading + tm.tmExternalLeading;
-			lspace = (float)lspace * pixels_per_point / 2.0;
-
-			lheight = tm.tmHeight + tm.tmExternalLeading;
-			lheight = (float)lheight * pixels_per_point;
-		}
-
-		draw_display(cur_wnd, hdc);
-		EndPaint(hwnd, &ps);
+		draw_edit_window(idx, hdc);
+		EndPaint(wnd->hwnd, &ps);
 	}
 
 	if (uMsg == WM_LBUTTONDOWN) {
 		int x = lParam & 0xffff;
 		int y = lParam >> 16;
 
-		int width = cur_wnd == ASM_WND ? asm_w : bin_w;
-		if (!(x >= BORDER && x < width - BORDER && y >= BORDER && y < wnd_h - BORDER))
+		window_t *wnd = get_window(idx);
+		if (!(x >= BORDER && x < wnd->w - BORDER && y >= BORDER && y < wnd->h - BORDER))
 			return 0;
 
-		set_caret_from_coords(cur_wnd, x, y);
-		set_focus(cur_wnd);
-		refresh_window(cur_wnd);
+		set_caret_from_coords(idx, x, y);
+		set_focus(idx);
+		refresh_window(idx);
 	}
 
 	if (uMsg == WM_SETCURSOR) {
