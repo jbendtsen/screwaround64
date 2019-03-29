@@ -4,7 +4,7 @@
 #define WND_ID_OFF 32
 
 #define N_X_ELEMS 5
-#define N_Y_ELEMS 8
+#define N_Y_ELEMS 6
 
 typedef struct {
 	int min_px;
@@ -122,8 +122,7 @@ void set_texts(tab_t *tab) {
 	window[MAIN_WND].text = NULL;
 	window[ASM_WND].text = &tab->asm_text;
 	window[BIN_WND].text = &tab->bin_text;
-	window[ERR_LIST].text = &tab->err_list;
-	window[ERR_INFO].text = &tab->err_info;
+	window[ERR_WND].text = &tab->err_text;
 	window[ASM_HEAD].text = NULL;
 	window[BIN_HEAD].text = NULL;
 }
@@ -163,7 +162,7 @@ LRESULT CALLBACK display_proc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 	window[w].hwnd = hwnd; // In case it's a new handle
 	if (w == ASM_WND || w == BIN_WND)
 		return code_display(w, uMsg, wParam, lParam);
-	else if (w == ERR_LIST || w == ERR_INFO)
+	else if (w == ERR_WND)
 		return error_display(w, uMsg, wParam, lParam);
 
 	return 0;
@@ -247,18 +246,15 @@ HWND init_gui(HINSTANCE hInstance, WNDPROC main_proc) {
 	y_elems[0] = (elem_size){.max_px = 10, .fraction = 0.01}; // top gap
 	y_elems[1] = (elem_size){.min_px = 20, .max_px = 30, .fraction = 0.05}; // headings
 	y_elems[2] = (elem_size){.fraction = 0.6}; // code windows
-	y_elems[3] = (elem_size){.max_px = 15, .fraction = 0.01}; // code gap
-	y_elems[4] = (elem_size){.max_px = 100, .fraction = 0.20, .hidden = 0}; // error list window
-	y_elems[5] = (elem_size){.max_px = 10, .fraction = 0.01, .hidden = 0}; // error gap
-	y_elems[6] = (elem_size){.max_px = 50, .fraction = 0.10, .hidden = 0}; // error info window
-	y_elems[7] = (elem_size){.max_px = 20, .fraction = 0.02}; // bottom gap
+	y_elems[3] = (elem_size){.max_px = 15, .fraction = 0.02}; // code gap
+	y_elems[4] = (elem_size){.max_px = 100, .fraction = 0.30, .hidden = 1}; // error info window
+	y_elems[5] = (elem_size){.max_px = 20, .fraction = 0.02}; // bottom gap
 
 	init_brushes();
 
 	init_display_window(ASM_WND);
 	init_display_window(BIN_WND);
-	init_display_window(ERR_LIST);
-	init_display_window(ERR_INFO);
+	init_display_window(ERR_WND);
 
 	init_heading(ASM_HEAD, " Assembly");
 	init_heading(BIN_HEAD, " Binary");
@@ -333,8 +329,7 @@ void resize_subwindows(int width, int height) {
 
 	repos_window(ASM_WND, &x_pos[1], 1, &y_pos[2], 1);
 	repos_window(BIN_WND, &x_pos[3], 1, &y_pos[2], 1);
-	repos_window(ERR_LIST, &x_pos[1], 3, &y_pos[4], 1);
-	repos_window(ERR_INFO, &x_pos[1], 3, &y_pos[6], 1);
+	repos_window(ERR_WND, &x_pos[1], 3, &y_pos[4], 1);
 	repos_window(ASM_HEAD, &x_pos[1], 1, &y_pos[1], 1);
 	repos_window(BIN_HEAD, &x_pos[3], 1, &y_pos[1], 1);
 }

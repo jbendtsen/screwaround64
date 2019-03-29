@@ -10,12 +10,11 @@
 #define MAIN_WND 0
 #define ASM_WND  1
 #define BIN_WND  2
-#define ERR_LIST 3
-#define ERR_INFO 4
-#define ASM_HEAD 5
-#define BIN_HEAD 6
+#define ERR_WND  3
+#define ASM_HEAD 4
+#define BIN_HEAD 5
 
-#define N_WNDS   7
+#define N_WNDS   6
 
 #define WIDTH  600
 #define HEIGHT 550
@@ -83,8 +82,7 @@ typedef struct {
 
 	text_t asm_text; // not pointers
 	text_t bin_text;
-	text_t err_list;
-	text_t err_info;
+	text_t err_text;
 } tab_t;
 
 typedef struct {

@@ -8,8 +8,7 @@ void init_text(text_t *txt) {
 void create_texts(tab_t *tab) {
 	init_text(&tab->asm_text);
 	init_text(&tab->bin_text);
-	init_text(&tab->err_list);
-	init_text(&tab->err_info);
+	init_text(&tab->err_text);
 
 	text_t *a = &tab->asm_text;
 	text_t *b = &tab->bin_text;
