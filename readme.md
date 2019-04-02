@@ -14,7 +14,7 @@ At this time, this project is more of a prototype. Upcoming features are:
 	- Any time an instruction fails to assemble/disassemble, an informative message will be added to the bottom of the window
 	- If there are any errors, the code won't be able to be transferred/exported
 * Multiple tabs
-	- Each tab will have its own N64 RAM offset, so that when the code is exported each tab will be distributed to a different location in RAM
+	- Each tab is given own emulated RAM offset so that when the code is exported, each tab's code will end up in the correct place
 * Project management
 	- Assembly configuration, symbols, comments, metadata, tabs, etc.
 * Export as
